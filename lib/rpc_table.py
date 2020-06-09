@@ -60,7 +60,7 @@ func_table = [
     [ "string", ["string", "string", "string", "string", "string", "string", "string"] ],
     [ "string", ["string", "string", "string", "string", "string", "string", "string", "int64"] ],
     [ "string", ["string", "string", "string", "string", "string", "string", "string", "string", "string"] ],
-    [ "string", ["string", "int", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "int", "string"] ],
+    [ "string", ["string", "int", "string", "string", "string", "string", "string", "string", "string", "int", "string"] ],
     [ "string", ["string", "int", "string", "int", "int"] ],
     [ "string", ["string", "int", "string", "string", "string"] ],
     [ "objlist", [] ],
@@ -83,7 +83,6 @@ func_table = [
     [ "objlist", ["string", "int", "string", "int", "int"] ],
     [ "objlist", ["string", "int", "string", "string", "int"] ],
     [ "objlist", ["string", "string", "string", "string", "int", "int"] ],
-    [ "object", [] ],
     [ "object", ["int"] ],
     [ "object", ["string"] ],
     [ "object", ["string", "string"] ],
@@ -92,4 +91,5 @@ func_table = [
     [ "object", ["int", "string", "string"] ],
     [ "object", ["string", "string", "string", "string", "string", "string", "string", "int", "int"] ],
     [ "object", ["string", "string", "string", "string", "string", "string", "int", "string", "int", "int"] ],
+    [ "json", [] ],
 ]

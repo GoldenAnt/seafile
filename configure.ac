@@ -2,7 +2,7 @@ dnl Process this file with autoconf to produce a configure script.
 
 
 AC_PREREQ(2.61)
-AC_INIT([seafile], [6.0.4], [info@seafile.com])
+AC_INIT([seafile], [7.0.8], [info@seafile.com])
 AC_CONFIG_HEADER([config.h])
 
 AC_CONFIG_MACRO_DIR([m4])
@@ -24,6 +24,8 @@ AC_C_CONST
 AC_PROG_MAKE_SET
 # AC_PROG_RANLIB
 LT_INIT
+
+AM_PROG_VALAC([], [], [AC_MSG_ERROR([*** Unable to find Vala compiler])])
 
 # Checks for headers.
 #AC_CHECK_HEADERS([arpa/inet.h fcntl.h inttypes.h libintl.h limits.h locale.h netdb.h netinet/in.h stdint.h stdlib.h string.h strings.h sys/ioctl.h sys/socket.h sys/time.h termios.h unistd.h utime.h utmp.h])
@@ -150,8 +152,8 @@ AC_SUBST(LIB_ICONV)
 
 
 LIBEVENT_REQUIRED=2.0
+LIBEVENT_PTHREADS_REQUIRED=2.0
 GLIB_REQUIRED=2.16.0
-CCNET_REQUIRED=0.9.3
 SEARPC_REQUIRED=1.0
 JANSSON_REQUIRED=2.2.1
 CURL_REQUIRED=7.17
@@ -165,10 +167,6 @@ AC_SUBST(GLIB2_LIBS)
 PKG_CHECK_MODULES(GOBJECT, [gobject-2.0 >= $GLIB_REQUIRED])
 AC_SUBST(GOBJECT_CFLAGS)
 AC_SUBST(GOBJECT_LIBS)
-
-PKG_CHECK_MODULES(CCNET, [libccnet >= $CCNET_REQUIRED])
-AC_SUBST(CCNET_CFLAGS)
-AC_SUBST(CCNET_LIBS)
 
 PKG_CHECK_MODULES(SEARPC, [libsearpc >= $SEARPC_REQUIRED])
 AC_SUBST(SEARPC_CFLAGS)
@@ -190,7 +188,14 @@ PKG_CHECK_MODULES(CURL, [libcurl >= $CURL_REQUIRED])
 AC_SUBST(CURL_CFLAGS)
 AC_SUBST(CURL_LIBS)
 
-AM_PATH_PYTHON([2.6])
+if test "$bwin32" != true; then
+# do not check libevent_pthreads in win32
+PKG_CHECK_MODULES(LIBEVENT_PTHREADS, [libevent_pthreads >= $LIBEVENT_PTHREADS_REQUIRED])
+AC_SUBST(LIBEVENT_PTHREADS_CFLAGS)
+AC_SUBST(LIBEVENT_PTHREADS_LIBS)
+fi
+
+AM_PATH_PYTHON([3.5])
 
 if test "$bwin32" = true; then
     # set pyexecdir to somewhere like /c/Python26/Lib/site-packages

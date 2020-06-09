@@ -2,8 +2,6 @@
 
 #include "common.h"
 
-#include <ccnet.h>
-
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <dirent.h>
@@ -19,7 +17,6 @@
 #include "fs-mgr.h"
 #include "block-mgr.h"
 #include "utils.h"
-#include "seaf-utils.h"
 #define DEBUG_FLAG SEAFILE_DEBUG_OTHER
 #include "log.h"
 #include "../common/seafile-crypt.h"
@@ -40,19 +37,19 @@ typedef struct SeafileOndisk {
     guint32          type;
     guint64          file_size;
     unsigned char    block_ids[0];
-} __attribute__((gcc_struct, __packed__)) SeafileOndisk;
+} __attribute__((__packed__)) SeafileOndisk;
 
 typedef struct DirentOndisk {
     guint32 mode;
     char    id[40];
     guint32 name_len;
     char    name[0];
-} __attribute__((gcc_struct, __packed__)) DirentOndisk;
+} __attribute__((__packed__)) DirentOndisk;
 
 typedef struct SeafdirOndisk {
     guint32 type;
     char    dirents[0];
-} __attribute__((gcc_struct, __packed__)) SeafdirOndisk;
+} __attribute__((__packed__)) SeafdirOndisk;
 
 #ifndef SEAFILE_SERVER
 uint32_t
@@ -633,7 +630,13 @@ seafile_write_chunk (const char *repo_id,
             return -1;
         }
 
-        g_checksum_update (ctx, (unsigned char *)encrypted_buf, enc_len);
+        if (seaf->disable_block_hash) {
+            char *uuid = gen_uuid();
+            g_checksum_update (ctx, (unsigned char *)uuid, strlen(uuid));
+            g_free(uuid);
+        } else {
+            g_checksum_update (ctx, (unsigned char *)encrypted_buf, enc_len);
+        }
         g_checksum_get_digest (ctx, checksum, &len);
 
         if (write_data)
@@ -641,7 +644,14 @@ seafile_write_chunk (const char *repo_id,
         g_free (encrypted_buf);
     } else {
         /* not a encrypted repo, go ahead */
-        g_checksum_update (ctx, (unsigned char *)chunk->block_buf, chunk->len);
+        if (seaf->disable_block_hash) {
+            char *uuid = gen_uuid();
+            g_checksum_update (ctx, (unsigned char *)uuid, strlen(uuid));
+            g_free(uuid);
+        }
+        else {
+            g_checksum_update (ctx, (unsigned char *)chunk->block_buf, chunk->len);
+        }
         g_checksum_get_digest (ctx, checksum, &len);
 
         if (write_data)
@@ -659,13 +669,10 @@ create_cdc_for_empty_file (CDCFileDescriptor *cdc)
     memset (cdc, 0, sizeof(CDCFileDescriptor));
 }
 
-#if defined SEAFILE_SERVER && defined FULL_FEATURE
-
-#define FIXED_BLOCK_SIZE (1<<20)
-
 typedef struct ChunkingData {
     const char *repo_id;
     int version;
+    uint32_t blk_size;
     const char *file_path;
     SeafileCrypt *crypt;
     guint8 *blk_sha1s;
@@ -714,7 +721,7 @@ chunking_worker (gpointer vdata, gpointer user_data)
     if (chunk->result < 0)
         goto out;
 
-    idx = chunk->offset / FIXED_BLOCK_SIZE;
+    idx = chunk->offset / data->blk_size;
     memcpy (data->blk_sha1s + idx * CHECKSUM_LENGTH, chunk->checksum, CHECKSUM_LENGTH);
 
 out:
@@ -722,6 +729,8 @@ out:
     close (fd);
     g_async_queue_push (data->finished_tasks, chunk);
 }
+
+#define DEFAULT_SPLIT_FILE_TO_BLOCK_THREADS 3
 
 static int
 split_file_to_block (const char *repo_id,
@@ -741,7 +750,7 @@ split_file_to_block (const char *repo_id,
     CDCDescriptor *chunk;
     int ret = 0;
 
-    n_blocks = (file_size + BLOCK_SZ - 1) / BLOCK_SZ;
+    n_blocks = (file_size + cdc->block_sz - 1) / cdc->block_sz;
     block_sha1s = g_new0 (uint8_t, n_blocks * CHECKSUM_LENGTH);
     if (!block_sha1s) {
         seaf_warning ("Failed to allocate block_sha1s.\n");
@@ -759,9 +768,10 @@ split_file_to_block (const char *repo_id,
     data.crypt = crypt;
     data.blk_sha1s = block_sha1s;
     data.finished_tasks = finished_tasks;
-
+    data.blk_size = cdc->block_sz;
+    
     tpool = g_thread_pool_new (chunking_worker, &data,
-                               seaf->http_server->max_indexing_threads, FALSE, NULL);
+                               DEFAULT_SPLIT_FILE_TO_BLOCK_THREADS, FALSE, NULL);
     if (!tpool) {
         seaf_warning ("Failed to allocate thread pool\n");
         ret = -1;
@@ -772,7 +782,7 @@ split_file_to_block (const char *repo_id,
     guint64 len;
     guint64 left = (guint64)file_size;
     while (left > 0) {
-        len = ((left >= FIXED_BLOCK_SIZE) ? FIXED_BLOCK_SIZE : left);
+        len = ((left >= cdc->block_sz) ? cdc->block_sz : left);
 
         chunk = g_new0 (CDCDescriptor, 1);
         chunk->offset = offset;
@@ -792,12 +802,14 @@ split_file_to_block (const char *repo_id,
             goto out;
         }
 
-        if ((--n_pending) <= 0)
+        if ((--n_pending) <= 0) {
             break;
+        }
     }
 
     cdc->block_nr = n_blocks;
     cdc->blk_sha1s = block_sha1s;
+
 
 out:
     if (tpool)
@@ -811,7 +823,6 @@ out:
     return ret;
 }
 
-#endif  /* SEAFILE_SERVER */
 
 int
 seaf_fs_manager_index_blocks (SeafFSManager *mgr,
@@ -841,11 +852,17 @@ seaf_fs_manager_index_blocks (SeafFSManager *mgr,
     } else {
         memset (&cdc, 0, sizeof(cdc));
 
-#if defined SEAFILE_SERVER && defined FULL_FEATURE
-        if (use_cdc || version == 0) {
-            cdc.block_sz = calculate_chunk_size (sb.st_size);
-            cdc.block_min_sz = cdc.block_sz >> 2;
-            cdc.block_max_sz = cdc.block_sz << 2;
+        if (seaf->cdc_average_block_size == 0) {
+            cdc.block_sz = CDC_AVERAGE_BLOCK_SIZE;
+            cdc.block_min_sz = CDC_MIN_BLOCK_SIZE;
+            cdc.block_max_sz = CDC_MAX_BLOCK_SIZE;
+        } else {
+            cdc.block_sz = seaf->cdc_average_block_size;
+            cdc.block_min_sz = seaf->cdc_average_block_size >> 1;
+            cdc.block_max_sz = seaf->cdc_average_block_size << 1;
+        }
+        
+        if (use_cdc) {
             cdc.write_block = seafile_write_chunk;
             memcpy (cdc.repo_id, repo_id, 36);
             cdc.version = version;
@@ -860,20 +877,8 @@ seaf_fs_manager_index_blocks (SeafFSManager *mgr,
             if (split_file_to_block (repo_id, version, file_path, sb.st_size,
                                      crypt, &cdc, write_data) < 0) {
                 return -1;
-            }
+            }            
         }
-#else
-        cdc.block_sz = calculate_chunk_size (sb.st_size);
-        cdc.block_min_sz = cdc.block_sz >> 2;
-        cdc.block_max_sz = cdc.block_sz << 2;
-        cdc.write_block = seafile_write_chunk;
-        memcpy (cdc.repo_id, repo_id, 36);
-        cdc.version = version;
-        if (filename_chunk_cdc (file_path, &cdc, crypt, write_data) < 0) {
-            seaf_warning ("Failed to chunk file with CDC.\n");
-            return -1;
-        }
-#endif
 
         if (write_data && write_seafile (mgr, repo_id, version, &cdc, sha1) < 0) {
             g_free (cdc.blk_sha1s);

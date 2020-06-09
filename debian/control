@@ -4,8 +4,9 @@ Priority: extra
 Maintainer: m.eik michalke <meik.michalke@hhu.de>
 Build-Depends:
     debhelper (>= 7),
+    dh-python,
     autotools-dev,
-    libssl1.0-dev | libssl-dev (<< 1.1),
+    libssl-dev,
     libsqlite3-dev,
     intltool,
     libglib2.0-dev,
@@ -15,9 +16,8 @@ Build-Depends:
     libcurl4-openssl-dev,
     valac,
     libjansson-dev,
-    python,
-    libsearpc-dev,
-    libccnet-dev
+    python3 (>= 3.5),
+    libsearpc-dev (>= 3.1.0)
 Standards-Version: 3.9.5
 Homepage: http://seafile.com
 
@@ -27,8 +27,7 @@ Architecture: any
 Depends:
     ${shlibs:Depends},
     ${misc:Depends},
-    ${python:Depends},
-    ccnet (>= 5.1.2)
+    ${python3:Depends},
 Conflicts: seafile
 Suggests: seafile-gui, seafile-cli
 Description: Seafile daemon
@@ -43,7 +42,7 @@ Architecture: any
 Depends:
     ${shlibs:Depends},
     ${misc:Depends},
-    ${python:Depends}
+    ${python3:Depends}
 Conflicts: seafile
 Description: Shared libraries for Seafile
  This package contains the shared libraries for the Seafile daemon.
@@ -54,11 +53,10 @@ Architecture: any
 Depends:
     ${shlibs:Depends},
     ${misc:Depends},
-    ${python:Depends},
+    ${python3:Depends},
     libseafile0 (>= ${binary:Version}),
-    ccnet (>= 5.1.2),
     seafile-daemon (>= ${binary:Version}),
-    python-searpc
+    python-searpc (>= 3.1.0)
 Conflicts: seafile
 Description: Seafile command line interface.
  This package contains the command line interface to manage Seafile libraries.
